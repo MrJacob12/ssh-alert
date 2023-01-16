@@ -1,5 +1,6 @@
 extern crate native_tls;
 extern crate serde_json;
+extern crate serde_yaml;
 extern crate reqwest;
 
 use std::{env, path::Path, fs, process::Command};
@@ -12,13 +13,57 @@ use chrono::Local;
 
 fn main() {
     let args: Vec<String> = env::args().collect();
+    let path_config = Path::new("/etc/ssh-alert/config.yml").exists();
+    // Check if the config file exists
+    if !path_config{
+        Path::new("/etc/ssh-alert").parent().unwrap();
+        fs::create_dir_all("/etc/ssh-alert").unwrap();
+        println!("Creating directory: /etc/ssh-alert");
+        Command::new("chmod")
+            .arg("755")
+            .arg("/etc/ssh-alert")
+            .output()
+            .expect("Failed to set permissions");
+        println!("Setting permissions: /etc/ssh-alert");
+        let mut file = fs::File::create("/etc/ssh-alert/config.yml").unwrap();
+        let lines = vec!["smtp_server: smtp.gmail.com", "username: ", "password: ", "from: ", "to: ", "path: /fern/ssh-alert/main"];
+        for line in lines {
+            file.write(line.as_bytes()).unwrap();
+            file.write(b"\n").unwrap();
+        }
+        println!("Creating file: /etc/ssh-alert/config.yml");
+        Command::new("chmod")
+            .arg("700")
+            .arg("/etc/ssh-alert/config.yml")
+            .output()
+            .expect("Failed to set permissions");
+        println!("Setting permissions: /etc/ssh-alert/config.yml");
+        Command::new("chown")
+            .arg("root:root")
+            .arg("/etc/ssh-alert/config.yml")
+            .output()
+            .expect("Failed to set owner");
+        println!("Setting owner: /etc/ssh-alert/config.yml");
+        println!("Done!");
+    }
+
+    let config = fs::read_to_string("/etc/ssh-alert/config.yml").unwrap();
+    let config: Value = serde_yaml::from_str(&config).unwrap();
+
+    // Check if the config file is filled out
+    if config["smtp_server"].is_null() || config["username"].is_null() || config["password"].is_null() || config["from"].is_null() || config["to"].is_null() {
+        println!("Please fill out the config file at /etc/ssh-alert/config.yml");
+        return;
+    }
+
     if args.len() < 6 {
         println!("Usage: ssh-alert <username> <ip> <service> <tty> <uname>");
         let path_pam_s = Path::new("/etc/pam.scripts").exists();
         if !path_pam_s{
-            let lines = vec!["#!/bin/sh", "if [ ${PAM_TYPE} = \"open_session\" ]; then", "  /fern/ssh-alert/main $PAM_USER $PAM_RHOST $PAM_SERVICE $PAM_TTY `uname -a`", "fi", "exit 0"];
+            let line_path = format!("  {} $PAM_USER $PAM_RHOST $PAM_SERVICE $PAM_TTY `uname -a`", config["path"].as_str().unwrap());
+            let lines = vec!["#!/bin/sh", "if [ ${PAM_TYPE} = \"open_session\" ]; then", &line_path , "fi", "exit 0"];
             // Create the directory
-            let path = Path::new("/etc/pam.scripts").parent().unwrap().to_path_buf();
+            let _path = Path::new("/etc/pam.scripts").parent().unwrap().to_path_buf();
             fs::create_dir_all("/etc/pam.scripts").unwrap();
             println!("Creating directory: /etc/pam.scripts");
             // Set the permissions to 755
@@ -84,14 +129,14 @@ fn main() {
 
 
     let email = Message::builder()
-        .from("".parse().unwrap()) 
-        .to("".parse().unwrap()) 
+        .from(config["from"].as_str().unwrap().parse().unwrap()) 
+        .to(config["to"].as_str().unwrap().parse().unwrap()) 
         .subject(format!("[SSH][{}] New SSH Connection From {}", current_time.format("%H:%M"), user_ip))
         .header(ContentType::TEXT_HTML)
         .body(msg)
         .unwrap(); 
-    let creds = Credentials::new("".to_string(), "".to_string());
-    let mailer = SmtpTransport::relay("smtp.gmail.com") 
+    let creds = Credentials::new(config["username"].as_str().unwrap().parse().unwrap(), config["password"].as_str().unwrap().parse().unwrap());
+    let mailer = SmtpTransport::relay(config["smtp_server"].as_str().unwrap()) 
         .unwrap() 
         .credentials(creds) 
         .build();  
