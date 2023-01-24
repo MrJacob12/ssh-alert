@@ -34,23 +34,29 @@ ssh alert is a simple tool to alert you when someone is trying to login to your 
 git clone https://github.com/MrJacob12/ssh-alert
 ```
 
-```rust
-// Replace /fern/ssh-alert/main with your path to the binary
-let lines = vec!["#!/bin/sh", "if [ ${PAM_TYPE} = \"open_session\" ]; then", "  /fern/ssh-alert/main $PAM_USER $PAM_RHOST $PAM_SERVICE $PAM_TTY `uname -a`", "fi", "exit 0"];
-
-// Replace with your email from and to
-let email = Message::builder()
-.from("".parse().unwrap())
-.to("".parse().unwrap())
-
-// Set your user and password
-let creds = Credentials::new("user".to_string(), "password".to_string());
-let mailer = SmtpTransport::relay("smtp.gmail.com")
-```
-
 ```bash
 cargo build --release
 ```
+
+Run app as root
+
+```bash
+sudo ./main
+```
+
+First run create config file into `/etc/ssh-alert/config.yml`
+Fill this conifg:
+
+```yaml
+smtp_server: smtp.gmail.com
+username: Username to google.smtp
+password: Password to google.smtp
+from: Email from
+to: Email to send alert
+path: Path to ssh-alert executable file
+```
+
+Second run as root create pam script to handle success login. If you want to change path to executable file after second run, you need to change path in `/etc/pam.scripts/ssh_alert.sh`
 
 ## ⛏️ Built Using <a name = "built_using"></a>
 
