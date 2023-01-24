@@ -44,8 +44,7 @@ Run app as root
 sudo ./main
 ```
 
-First run create config file into `/etc/ssh-alert/config.yml`
-Fill this conifg:
+The first run will create a configuration file to `/etc/ssl-alert/config.yml` Complete this configuration:
 
 ```yaml
 smtp_server: smtp.gmail.com
