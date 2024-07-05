@@ -13,6 +13,7 @@ use chrono::Local;
 
 fn main() {
     let args: Vec<String> = env::args().collect();
+
     let path_config = Path::new("/etc/ssh-alert/config.yml").exists();
     // Check if the config file exists
     if !path_config{
@@ -26,7 +27,9 @@ fn main() {
             .expect("Failed to set permissions");
         println!("Setting permissions: /etc/ssh-alert");
         let mut file = fs::File::create("/etc/ssh-alert/config.yml").unwrap();
-        let lines = vec!["smtp_server: smtp.gmail.com", "username: ", "password: ", "from: ", "to: ", "path: /fern/ssh-alert/main"];
+        // Get path to executable
+        let _path = env::current_exe().unwrap();
+        let lines = vec!["smtp_server: smtp.gmail.com", "username: ", "password: ", "from: ", "to: ", "path: ", "notification_url: ", "discord_webhook: "];
         for line in lines {
             file.write(line.as_bytes()).unwrap();
             file.write(b"\n").unwrap();
@@ -51,7 +54,7 @@ fn main() {
     let config: Value = serde_yaml::from_str(&config).unwrap();
 
     // Check if the config file is filled out
-    if config["smtp_server"].is_null() || config["username"].is_null() || config["password"].is_null() || config["from"].is_null() || config["to"].is_null() {
+    if config["path"].is_null()  {
         println!("Please fill out the config file at /etc/ssh-alert/config.yml");
         return;
     }
@@ -127,22 +130,65 @@ fn main() {
         msg.push_str(&location_msg);
     }
 
-
-    let email = Message::builder()
-        .from(config["from"].as_str().unwrap().parse().unwrap()) 
-        .to(config["to"].as_str().unwrap().parse().unwrap()) 
-        .subject(format!("[SSH][{}] New SSH Connection From {}", current_time.format("%H:%M"), user_ip))
-        .header(ContentType::TEXT_HTML)
-        .body(msg)
-        .unwrap(); 
-    let creds = Credentials::new(config["username"].as_str().unwrap().parse().unwrap(), config["password"].as_str().unwrap().parse().unwrap());
-    let mailer = SmtpTransport::relay(config["smtp_server"].as_str().unwrap()) 
-        .unwrap() 
-        .credentials(creds) 
-        .build();  
-    match mailer.send(&email) {
-        Ok(_) => println!("Email sent"),
-        Err(e) => println!("Could not send email: {}", e),
+    if !config["notification_url"].is_null(){
+        let client = reqwest::blocking::Client::new();
+        let _res = client.post(config["notification_url"].as_str().unwrap())
+            .body(format!("🖥️Connection from {} at {}\nConnected at {}\nService: {}\nTty: {}\nServer: {}", user_ip, current_time.format("%Y-%m-%d %H:%M:%S"), user, service, tty, server)) 
+            .send();
     }
+    
+    if !config["smtp_server"].is_null() || !config["username"].is_null() || !config["password"].is_null() || !config["from"].is_null() || !config["to"].is_null(){
+        let email = Message::builder()
+                .from(config["from"].as_str().unwrap().parse().unwrap()) 
+                .to(config["to"].as_str().unwrap().parse().unwrap()) 
+                .subject(format!("[SSH][{}] New SSH Connection From {}", current_time.format("%H:%M"), user_ip))
+                .header(ContentType::TEXT_HTML)
+                .body(msg)
+                .unwrap(); 
+        let creds = Credentials::new(config["username"].as_str().unwrap().parse().unwrap(), config["password"].as_str().unwrap().parse().unwrap());
+        let mailer = SmtpTransport::relay(config["smtp_server"].as_str().unwrap()) 
+            .unwrap() 
+            .credentials(creds) 
+            .build();  
+        match mailer.send(&email) {
+            Ok(_) => println!("Email sent"),
+            Err(e) => println!("Could not send email: {}", e),
+    }
+    }
+    
 
+    if !config["discord_webhook"].is_null(){
+        let client = reqwest::blocking::Client::new();
+        let _res = client.post(config["discord_webhook"].as_str().unwrap())
+            .header(reqwest::header::CONTENT_TYPE, "application/json")
+            .body(serde_json::to_string(&serde_json::json!({
+                "content": null,
+                "embeds": [
+                    {
+                    "title": format!("🖥️Connection from {} at {}",  user_ip, current_time.format("%Y-%m-%d %H:%M:%S")),
+                    "color": 5814783,
+                    "fields": [
+                        {
+                        "name": "Connected at",
+                        "value": user.to_string()
+                        },
+                        {
+                        "name": "Service",
+                        "value": service.to_string()
+                        },
+                        {
+                        "name": "Tty",
+                        "value": tty.to_string()
+                        },
+                        {
+                        "name": "Server",
+                        "value": server.to_string()
+                        }
+                    ]
+                    }
+                ],
+                "attachments": []
+            })).unwrap())
+            .send();
+    }
 }
